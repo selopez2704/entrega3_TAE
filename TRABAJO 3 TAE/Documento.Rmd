@@ -1,0 +1,349 @@
+---
+title: "<center> Análisis de resultados escolares con reducción de la dimensionalidad y agrupamiento</center> "
+author: "<center> Santiago Carvajal Torres <br> Cristian Alejandro Rojas Mazo  <br> Kevin Danilo Arias Buitrago   <br> Juan David Pino Ramírez  <br>  Sebastian López Mazo </center>"
+output:
+  html_document: 
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+    highlight: zenburn
+    theme: readable
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = F,warning = F)
+```
+
+```{r}
+library(leaflet)
+library(kableExtra)
+library(dplyr)
+library(factoextra)
+library(tidyr)
+library(readr)
+library(cluster)
+library(usmap)
+library(ggplot2)
+```
+
+<h2> <center> Problema a resolver </center> </h2> 
+
+Como en muchos paises del mundo, las clases sociales hacen mucho la diferencia a la hora de obtener buenos resultados académicamente. Las clases sociales altas, las cuales tienen un mucho mejor poder adquisitivo a comparación de las clases sociales bajas, dado que con estos recursos, pueden acceder a herramientas que facilitan y ayudan en la educación como lo son los computadores. Esto se ve muy reflejado en Colombia dado que siempre los 100 primeros colegios en la prueba ICFES son colegios privados (dichos datos están a disposición pública) y no siendo la excepción Estados Unidos tiene problemas por las gran diferencias que hay en los resultados académicos de distrito a distrito. Para esto tenemos la base de datos *CollegeScorecard*.
+
+
+<h2> <center> Análisis descriptivo y lectura a la base de datos </center> </h2>
+
+Como se mencionó en el apartado anterior, nuestra base es proporcinada por los Estados Unidos, con lo cual teniendo en cuenta su política de que no es obligatorio responder todas las preguntas por privacidad, hay demasiadas universidades que por no responder la pregunta ponen "*PrivacySuppresed*", con lo cual se va a tomar esta respuesta como si fuera nula para hacer más fácil el análisis de datos, además de que todos los espacios sin responder los llenaremos con *NULL*. 
+
+```{r}
+datos <- read.csv("CollegeScorecard.csv",na = c("NULL", "PrivacySuppressed"))
+```
+
+
+<h3> <center>  Tamaño de los datos </center> </h3>
+ 
+
+```{r}
+size <- data.frame(Filas=nrow(datos),Columnas = ncol(datos))
+
+kable(size,caption = "Tamaño de los datos") %>% 
+  kable_styling(full_width = F,position = "center") %>% 
+  kable_minimal()
+```
+
+Se puede ver que tenemos una gran cantidad de observaciones y muchisimas columnas, esto se intentará reducir en un siguiente apartado.
+
+<h3> <center> Ubicación de los datos </center> </h3> 
+
+Solo por hacernos una idea de cómo se ven los lugares en los que están las universidades, nos ayudamos de una librería de R llamada **leaflet** la cual nos gráfica dado que sabemos su posición geográfica. De esta forma, como tenemos 7804 datos, generaremos un vector al azar para graficar solo 500 de estas localizaciones.
+
+<center>
+```{r,echo=F,message=F,warning=FALSE,fig.width=5,fig.height=5}
+set.seed(123)
+mapa <- leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=datos$LONGITUDE[sample(7804,500)],lat=datos$LATITUDE[sample(7804,500)]) 
+
+mapa
+
+```
+</center>
+
+Así, podemos notar que no solo hay universidades que están en territorio Estado Unidense, por lo cual también se decide sacar dichas universidades para que solo estén universidades dentro el territorio Estado Unidense.
+
+<h3> <center> Universidades fuera de Estados Unidos </center> </h3>  
+
+
+Para saber qué universidades están fuera de su territorio, nos ayudamos de la variable región la cual categoriza la región en la cual está ubicada las universidades.
+<center>
+```{r,fig.width=5,fig.height=5}
+inf <- which(datos$region==9)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=datos$LONGITUDE[inf],lat=datos$LATITUDE[inf])
+
+```
+</center>
+Con lo que podemos notar que hay universidades, en Puerto Rico y Oceanía, con lo cual hay un total de `r length(inf)` universidades fuera de su territorio.
+
+
+
+<h3> <center> Cantidad de universidades por ciudad </center> </h3>   
+
+Aquí, se muestra cuantas universidades hay por ciudad, dado que Estados Unidos tiene tantas ciudades, solamente se muestran las ciudades con mayor cantidad de universidades.
+
+```{r,echo=FALSE}
+datos <- datos[-inf,]
+ciudades <- table(datos$CITY)
+ciudades <- ciudades[which(ciudades>40)]
+
+kable(ciudades,col.names =NULL,caption = "Tabla con las ciudades con más de 40 universidades") %>% 
+  kable_classic() %>% 
+  kable_styling(full_width = F,position = "center")
+
+
+```
+
+
+
+<h3> <center> Tipo de Universidad </center> </h3>   
+
+Con la variable **CONTROL** la cual especifica el tipo de universidad, Publica, privada sin ánimo de lucro y privada con ánimo de lucro, esto es otra variable la cual podría ayudarnos.
+
+
+```{r}
+tipo <- table(datos$CONTROL)
+rownames(tipo) <- c("Pública","Privada sin ánimo de lucro","Privada con ánimo de lucro")
+kable(tipo,col.names = NULL,caption = "Tipos de Universidades" ) %>% 
+  kable_styling(full_width = F,position = "center") %>% 
+  kable_classic()
+  
+  
+  
+```
+
+Con esto también podemos notar que las Universidades son un gran negocio, dado que la gran mayoría son Privadas con ánimo de lucro.
+
+
+
+<h2> <center> Reducción de las dimensiones </center> </h2>    
+
+Dado que tenemos demasiadas columnas las cuales muchas de ellas son innecesarias teniendo en cuenta que nuestro análisis y agrupación va a ir enfocado a la parte académica de las universidades por lo que todas las variables que tengan que ver con *url*,*banderas*,*costos*,*reembolsos*,*egresados* y entre otros, van a ser eliminadas con lo cual la base de datos quedará de la siguiente manera.
+
+Además para esto, también hay que tener en cuenta una variable que es muy importante la cual tiene que ver con los resultados de la prueba **SAT** la cual es una prueba de respuesta múltiple la cual es análoga a los **ICFES** en Colombia, la cual la presentan los estudiantes del último año en Estados Unidos, dicha prueba es muy importante dado que con esto se mide la preparación secundaria que tuvieron los estudiantes para entrar a las Universidades.
+
+```{r}
+base <- select(datos,c("UNITID","INSTNM","CITY","CONTROL","LATITUDE","LONGITUDE","ADM_RATE","SATVR25","SATVR75","SATMT25","SATMT75","SATVRMID","SATMTMID","SAT_AVG"))
+
+sizebase <- data.frame(Filas=nrow(base),Columnas = ncol(base))
+
+kable(sizebase,caption = "Tamaño de los datos") %>% 
+  kable_styling(full_width = F,position = "center") %>% 
+  kable_minimal()
+
+```
+
+Así, redujimos de 1725 columnas a 14. Pero aquí hay un problema y es que mucha de dichas universidades no respondieron las preguntas con la prueba **SAT** por lo que se hace un análisis de cuantas preguntas están sin responder por cada Universidad y dejamos solo las universidades que si respondieron dichas preguntas.
+
+```{r}
+datos_con_informacion <- which(rowSums(is.na(base))<6)
+
+informacion <- base[datos_con_informacion,]
+
+kable(t(colSums(is.na(informacion))),caption = "<strong> Cantidad de vacios por columna </strong>") %>% 
+  kable_minimal() %>% 
+  kable_styling(full_width = F,position = "center") %>% 
+  scroll_box(width = "700px",height = "200px")
+
+
+informacion <- informacion[-c(which(is.na(informacion$LATITUDE)=="TRUE"),which(is.na(informacion$SATVR25)),which(is.na(informacion$SATVR75))),]  # Eliminando todos los vacios
+
+
+
+```
+
+De aquí primero que todo notamos que hay observaciones que no tienen su ubicación geográfica por lo cual se van a eliminar y también 14 universidades las cuales no respondieron las mismas 3 preguntas que son **SATVR25**,**SATVR75**,**SATVRMID**
+
+
+```{r}
+sizebase <- data.frame(Filas=nrow(informacion),Columnas = ncol(informacion))
+
+kable(sizebase,caption = "Tamaño de los datos") %>% 
+  kable_styling(full_width = F,position = "center") %>% 
+  kable_minimal()
+
+```
+<h3> <center> Base de datos para trabajar </center> </h3> 
+
+De esta forma, nuestra base de datos ya depurada obtenemos 1288 diferentes universidades con 14 variables.
+
+A continuación se muestra un resumen de la base de datos.
+
+<center><table style="border-collapse:collapse;border-spacing:0" class="tg"><thead><tr><th style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;font-weight:bold;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Variable</th><th style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;font-weight:bold;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Descripción<br></th><th style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;font-weight:bold;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Tipo</th></tr></thead><tbody><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">UNITID</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">ID de la institución</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Integer</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">INSTNM</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Nombre de la institución</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Character<br></td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">CITY</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Ciudad<br></td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Character</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">CONTROL</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Tipo de institución<br></td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Integer<br></td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">LATITUDE</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Latitud</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">LONGITUDE</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Longitud</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">ADM_RATE</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Puntaje de admisión</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATVR25</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Percentil 25 de las pruebas SAT (Lectura crítica)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATVR75</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Percentil 75 de las pruebas SAT (Lectura crítica)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATMT25</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Percentil 25 de las pruebas SAT (Matemáticas)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATMT75</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Percentil 75 de las pruebas SAT (Matemáticas)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATVRMID</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Punto medio de puntajes pruebas SAT (Lectura crítica)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SATMTMID</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Punto medio de puntajes pruebas SAT (Matemáticas)</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float</td></tr><tr><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">SAT_AVG</td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Promedio de las pruebas SAT<br></td><td style="border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;text-align:left;vertical-align:top;word-break:normal">Float<br></td></tr></tbody></table></center>
+
+
+
+<h2> <center> Agrupación </center> </h2>  
+
+Para la agrupación utilizaremos K means, la cual es una ténica que como objetivo tiene la partición de todo el conjunto de observaciones, dividirlos en k grupos, en el cual cada observación pertenece a un grupo cuyo valor medio es más cercano. Esto es computacionalmente complicado, por lo cual es tan importante reducir las dimensiones de la base de datos.
+
+<h3> <center> Busqueda del K óptimo </center> </h3>   
+
+
+Teniendo en cuenta esto, primero debemos hallar en cuántos k grupos deberíamos dividir el conjunto de datos, esto se puede hacer mediante diferentes métodos en este caso se usará el método de el codo para detectar cual es nuestro K óptimo.
+
+<h4> <center> Método del codo </center> </h4>    
+
+```{r}
+wss <- sapply(4:15,function(k){kmeans(informacion[,5:6], k, nstart = 50, iter.max = 15)$tot.withinss})
+
+plot(4:15,wss,
+     type = "b", pch = 19, frame = FALSE,
+     xlab = "Número de Clusters (k)",
+     ylab = "WSS Total", 
+     main = "Método del Codo", col="forestgreen")
+```
+
+Si tenemos en cuenta el método del codo, el mejor candidato a ser un K óptimo es k=10 o k = 12 dado que representan un delta mucho más bajo en sus pendientes en comparación con su compañeros.
+
+De esta manera decidimos tomar un k=12 dado el tamaño de los Estados Unidos y que tiene demasiadas ciudades con una gran cantidad de universidades.
+
+<h3> <center> K means </center> </h3>    
+
+Tomando los 12 grupos, se puede notar en el siguiente mapa en cómo se agruparon. De esta forma, podemos comparar por cada grupo cual fue su puntaje promedio en las pruebas SAT. Así podremos saber en qué Zona o Estado estarían ubicadas las mejores universidades.
+
+```{r}
+clusters <- kmeans(informacion[,5:6],12)
+informacion$cluster <- as.factor(clusters$cluster)
+
+qplot(LONGITUDE,LATITUDE,colour=cluster,data=informacion,xlab = "Longitud",ylab = "Latitud")
+
+```
+Así, nuestros datos quedarían como lo muestra la siguiente tabla:
+
+```{r}
+
+d <- as.data.frame(matrix(NA,nrow=length(table(informacion$cluster)),ncol=8))
+
+colnames(d) <- colnames(informacion[,c(7:14)])
+for (i in 1:nrow(d)) {
+  clust <- informacion[informacion$cluster==i,]
+  d[i,1] <- sum(clust$ADM_RATE)
+  d[i,2] <- sum(clust$SATVR25)
+  d[i,3] <- sum(clust$SATVR75)
+  d[i,4] <- sum(clust$SATMT25)
+  d[i,5] <- sum(clust$SATMT75)
+  d[i,6] <- sum(clust$SATVRMID)
+  d[i,7] <- sum(clust$SATMTMID)
+  d[i,8] <- sum(clust$SAT_AVG)
+  
+}
+d$media <- rowMeans(d)
+
+kable(d,caption = "Datos con su respectiva media grupal",table.attr="style='width:30%;'") %>% 
+  kable_minimal() %>% 
+  kable_styling(position = "center",full_width = F)
+
+```
+
+Graficando estas medias por grupo para ver en dónde están las mejores Universidades del país. Podemos notar como el mejor puntaje del país está en el grupo 2, además teniendo no despreciables puntajes los grupos 6,8 y 12.
+
+```{r}
+plot(x = 1:length(table(informacion$cluster)),y = d$media,type = "b",xlab = "Número de grupo",ylab = "Promedio en los puntajes")
+```
+
+Para ayudarnos a ver mejor en dónde están ubicados estos grupos buscamos los centros de cada grupo y lo gráficamos en un mapa. De esta forma si ponemos el click encima de cada punto podemos notar a qué grupo pertenece.
+
+```{r}
+centros <- as.data.frame(clusters$centers)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=centros$LONGITUDE,lat=centros$LATITUDE,label=paste("Grupo Número:",c(1:nrow(d))))
+```
+
+En las siguientes tablas, se muestra la cantidad de universidades que tiene cada Estado. Con esto nos podremos hacer una idea de cuál sería los mejores estados para estudiar en Estados Unidos, en orden del mejor grupo al peor grupo.
+
+```{r}
+grupo2 <- which(informacion$cluster==2)
+idgrupo2 <- informacion$UNITID[grupo2]
+
+baseidgrupo2 <- c()
+for (i in 1:length(idgrupo2)) {
+  baseidgrupo2[i] <- which(idgrupo2[i]==datos$UNITID)
+}
+
+grupo6 <- which(informacion$cluster==6)
+idgrupo6 <- informacion$UNITID[grupo6]
+
+baseidgrupo6 <- c()
+for (i in 1:length(idgrupo6)) {
+  baseidgrupo6[i] <- which(idgrupo6[i]==datos$UNITID)
+}
+
+grupo8 <- which(informacion$cluster==8)
+idgrupo8 <- informacion$UNITID[grupo8]
+baseidgrupo8 <- c()
+for (i in 1:length(idgrupo8)) {
+  baseidgrupo8[i] <- which(idgrupo8[i]==datos$UNITID)
+}
+
+
+grupo12 <- which(informacion$cluster==12)
+idgrupo12 <- informacion$UNITID[grupo12]
+baseidgrupo12 <- c()
+for (i in 1:length(idgrupo12)) {
+  baseidgrupo12[i] <- which(idgrupo12[i]==datos$UNITID)
+}
+
+
+kable(t(table(datos$STABBR[baseidgrupo2])),caption = "<center> Estados en el grupo 2 </center>") %>% 
+  kable_styling(full_width = F) %>% 
+  kable_minimal()
+
+kable(t(table(datos$STABBR[baseidgrupo6])),caption = "<center> Estados en el grupo 6 </center>") %>% 
+  kable_styling(full_width = F) %>% 
+  kable_minimal()
+
+kable(t(table(datos$STABBR[baseidgrupo8])),caption = "<center> Estados en el grupo 8 </center>") %>% 
+  kable_styling(full_width = F) %>% 
+  kable_minimal()
+
+kable(t(table(datos$STABBR[baseidgrupo12])),caption = "<center> Estados en el grupo 12 </center>") %>% 
+  kable_styling(full_width = F) %>% 
+  kable_minimal()
+```
+
+De esta forma para ejemplificar la ubicación de el grupo 2 que es el que obtuvo mejores resultados, utilizamos la librería *USmap*.
+
+
+
+```{r}
+plot_usmap(include=c("CT","MA","ME","NH","NJ","NY","RI","VT"))+
+    labs(title = "Grupo 2")
+```
+
+
+
+<h2> <center> Conclusiones </center> </h2>   
+
+Podríamos decir que el grupo con las mejores universidades en Estados Unidos es el 2, teniendo en cuenta su centro que se mostró anteriormente y el gráfico en el cual muestra todos los estados que incluye, podemos concluir que la mejor zona para estudiar en Estados Unidos sería la zona Noreste. 
+
+<h2> <center> Propuesta  </center> </h2>  
+
+Para hacer este mismo proceso, análogamente aquí en Colombia, tendríamos que tener los datos que los puntajes que obtuvieron los estudiantes en las pruebas ICFES en las diferentes Universidades del país. Además, tener la ubicación geográfica de cada Universidad en Colombia para así poder hacer diferentes grupos alrededor de Colombia y clasificarlos respectivamente dependiendo a el promedio del puntaje sacado por sus estudiantes en las pruebas ICFES.
+
+La información de los ICFES es de dominio público pero sin los documentos de los estudiantes, así que para poder obtener dichas bases, se necesitaría acceso a los datos de los estudiantes que ingresan a cada una de las universidades y que el ICFES otorgara los permisos para obtener los resultados con sus respectivos documentos de identidad.
+
+
+<h2> <center> Referencias  </center> </h2>  
+
+https://rpubs.com/juliasilge/219245
+
+https://www.datacamp.com/tutorial/k-means-clustering-r
+
+https://en.wikipedia.org/wiki/New_England
+
+https://jtr13.github.io/cc19/different-ways-of-plotting-u-s-map-in-r.html

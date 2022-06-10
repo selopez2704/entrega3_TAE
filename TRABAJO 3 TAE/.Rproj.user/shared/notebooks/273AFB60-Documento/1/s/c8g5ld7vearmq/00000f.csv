@@ -1,0 +1,2 @@
+"0","dat <- datos"
+"0","dat <- datos[, which(colMeans(!is.na(datos)) > 0.9)]"

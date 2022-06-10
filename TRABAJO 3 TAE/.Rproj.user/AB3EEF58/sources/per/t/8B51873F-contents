@@ -1,0 +1,290 @@
+---
+title: "Análisis de resultados escolares con reducción de la dimensionalidad y agrupamiento"
+author: "Santiago Carvajal Torres"
+output:
+  html_document: 
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+    highlight: zenburn
+    theme: readable
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = F,warning = F)
+```
+
+```{r}
+library(leaflet)
+library(kableExtra)
+library(dplyr)
+library(devtools)
+library(ggbiplot)
+
+library(broom)
+library(tidyr)
+library(readr)
+library(cluster)
+```
+
+## Problema a resolver
+
+Como en muchos paises del mundo, las clases sociales hacen mucho la diferencia a la hora de obtener buenos resultados académicamente. Las clases sociales altas, las cuales tienen un mucho mejor poder adquisitivo a comparación de las clases sociales bajas, dado que con estos recursos, pueden acceder a herramientas que facilitan y ayudan en la educación como lo son los computadores. Esto se ve muy reflejado en Colombia dado que siempre los 100 primeros colegios en la prueba ICFES son colegios privados (dichos datos están a disposición pública) y no siendo la excepción Estados Unidos tiene problemas por las gran diferencias que hay en los resultados académicos de distrito a distrito. Para esto tenemos la base de datos *CollegeScorecard*.
+
+
+## Análisis descriptivo a la base de datos
+
+### Ubicación de los datos
+
+Solo por hacernos una idea de cómo se ven los lugares en los que están las universidades, nos ayudamos de una librería de R la cual nos gráfica dado que sabemos su posición geográfica. Aquí podemos ver como las universidades de agrupan por ciudad, lo cual es de esperarse.
+
+<center>
+```{r,echo=F,message=F,warning=FALSE,fi}
+datos <- read.csv("CollegeScorecard.csv",na = c("NULL", "PrivacySuppressed"))
+
+
+mapa <- leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=datos$LONGITUDE[1:1000],lat=datos$LATITUDE[1:1000])
+
+mapa
+```
+</center>
+
+### Tamaño de los datos
+
+Como se puede notar, tenemos demasiadas columnas las cuales muchas de ellas son innecesarias y además sin información para lo cual se revisa cada una y se eliminan las que tengan más de un 30% de **NA**.
+
+<center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-73oq{border-color:#000000;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-73oq">Filas</th>
+    <th class="tg-73oq">Columnas</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-73oq">7804</td>
+    <td class="tg-73oq">1725</td>
+  </tr>
+</tbody>
+</table>
+</center>
+
+
+### Cantidad de universidades por ciudad
+
+```{r,echo=FALSE}
+ciudades <- table(datos$CITY)
+ciudades <- ciudades[which(ciudades>40)]
+
+kable(ciudades,col.names =NULL,caption = "Tabla con las ciudades con más de 40 universidades") %>% 
+  kable_classic() %>% 
+  kable_styling(full_width = F,position = "center")
+
+
+```
+
+
+## Método para solucionar el problema 
+
+Teniendo en cuenta la página en la cual nos dan la base de datos, hay unas persona la cual hace unas sugerencias (Dmitri de @data-society) las cuales tendremos en cuenta para que nuestro análisis quede mejor gracias a su experiencia previa.
+
+* Dismunir las dimensiones de la base de datos y utilizar análisis de componentes principales.
+* Utilizar agrupamiento esférico de **k-means** (esto seguramente se debe a lo se pudo notar en el para, las agrupaciones se centran en las ciudades).
+* Utilizar el factor de inflación de varianza (VIF) para identificar las variables inter-correlacionadas y removerlar.
+
+
+## Disminuyendo las dimensiones
+
+### Eliminación de todas las columnas con NA
+
+Eliminando todas las columnas que tienen tantos **NA**, nos queda la base de datos más reducida y con información más importante para poder hacer cada cluster. Esto mismo se intentó para las observaciones que no tuvieran datos, pero se notó que todas tenian bien sus datos al eliminar las columnas **NA**.
+
+```{r,echo=FALSE}
+dat <- datos
+dat <- datos[, which(colMeans(!is.na(datos)) > 0.9)]
+```
+
+<center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-73oq{border-color:#000000;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-73oq">Filas</th>
+    <th class="tg-73oq">Columnas</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-73oq">7804</td>
+    <td class="tg-73oq">478</td>
+  </tr>
+</tbody>
+</table>
+</center>
+
+### Eliminando las columnas con "PrivacySuppressed"
+
+Dado que por políticas de privacidad la Universidad no está obligada a dar todos los datos, también se eliminarán dichos datos de la base de datos.
+
+
+
+<center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-73oq{border-color:#000000;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-73oq">Filas</th>
+    <th class="tg-73oq">Columnas</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-73oq">7804</td>
+    <td class="tg-73oq">19</td>
+  </tr>
+</tbody>
+</table>
+</center>
+
+
+
+
+## Cambio de estrategia
+
+Como se puede ver en la tabla anterior nos quedan demasiados pocos datos al eliminar todos los datos "PrivacySuppressed" por lo cual nuestro equipo decidió tomar las columnas las cuales tuvieran más del 90% de los datos y predecir el 10% faltante con random forest.
+
+<center>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-color:#aaa;border-spacing:0;}
+.tg td{background-color:#fff;border-color:#aaa;border-style:solid;border-width:0px;color:#333;
+  font-family:Arial, sans-serif;font-size:14px;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{background-color:#f38630;border-color:#aaa;border-style:solid;border-width:0px;color:#fff;
+  font-family:Arial, sans-serif;font-size:14px;font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-0lax{text-align:left;vertical-align:top}
+.tg .tg-mcqj{border-color:#000000;font-weight:bold;text-align:left;vertical-align:top}
+.tg .tg-73oq{border-color:#000000;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-0lax" colspan="2">Datos con 10% NA<br></th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-mcqj">Filas</td>
+    <td class="tg-mcqj">Columnas</td>
+  </tr>
+  <tr>
+    <td class="tg-73oq">7804</td>
+    <td class="tg-73oq">282<br></td>
+  </tr>
+</tbody>
+</table>
+</center>
+
+
+
+
+
+
+```{r}
+
+datos_randomforest <- read_csv("datos_randomforest.csv")[-1]
+
+
+datosn <- dat %>% select(c("UNITID","INSTNM","ZIP","LOCALE"))
+datosn[,c(4:205)] <- datos_randomforest
+datosn <- datosn[,-c(5,7)] 
+
+names <- as.character(datos$INSTNM)
+aux <- which(table(names)==1)
+
+lista <- c()
+for (i in 1:7513) {
+  lista[i] <- which(names(aux[i])==datos$INSTNM)
+}
+
+Datos_reducidos <- datos[lista,]
+Datos_reducidos_forest <- datosn[lista,]
+
+for (i in 1:7513) {
+  rownames(Datos_reducidos_forest)[i] <- Datos_reducidos$INSTNM[i]
+}
+
+ceros <- sum(is.na(Datos_reducidos_forest))
+
+
+```
+## Análisis de componentes principales.
+
+De esta manera, como tenemos que predecir ese 10% de datos que nos faltan, utilizaremos random forest para obtenerlos, de esta manera nuestra base de datos estará completa y sin ningún dato faltante.
+
+Como paso siguiente, utilizamos análisis de componentes principales para disminuir aún más las dimensiones de la base de datos.
+
+
+
+
+```{r}
+library(ggfortify)
+datos_randomforest[] <- lapply(datos_randomforest[], as.numeric)
+set.seed(1234)
+autoplot(kmeans(datos_randomforest, 8), data = datos_randomforest, size = 3, alpha = 0.5) + 
+    ggtitle("K-Means por agrupaciones") +
+    theme(legend.position="none")
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+prueba <- dat[ , colSums(is.na(dat)) == 0]
+crudos <- prueba[,c(11:19)]
+
+
+Datos_reducidos[,22] <- as.numeric(Datos_reducidos[,22])
+Datos_reducidos[,23] <- as.numeric(Datos_reducidos[,23])
+
+limpios <- Datos_reducidos[-which(is.na(Datos_reducidos$LATITUDE)),22:23]
+
+cluster <- kmeans(limpios,12)
+
+autoplot(kmeans(limpios, 12), data = limpios, size = 3, alpha = 0.5) + 
+    ggtitle("K-Means por agrupaciones") +
+    theme(legend.position="none")
+
+
+```
+

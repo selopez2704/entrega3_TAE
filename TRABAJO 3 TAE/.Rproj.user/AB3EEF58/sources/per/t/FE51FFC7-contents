@@ -1,0 +1,58 @@
+diccionario  <- read.csv("CollegeScorecardDataDictionary-09-12-2015.csv")
+datos <- read.csv("CollegeScorecard.csv")
+datos <- read.csv("CollegeScorecard.csv",na = c("NULL", "PrivacySuppressed"))
+library(leaflet)
+
+mapa <- leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=datos$LONGITUDE[1:1000],lat=datos$LATITUDE[1:1000])
+
+mapa
+ciudades <- table(datos$CITY)
+ciudades <- ciudades[which(ciudades>40)]
+
+library(kableExtra)
+kable(ciudades,col.names =NULL,caption = "Tabla con las ciudades con más de 40 universidades") %>% 
+  kable_classic() %>% 
+  kable_styling(full_width = F,position = "center")
+
+library(dplyr)
+dat <- datos
+dat <- datos[, which(colMeans(!is.na(datos)) > 0.9)]
+
+which(sapply(dat, function(x) sum(is.na(x)))>700)
+
+
+library(missForest)
+nombres <- data.frame(colnames(dat))
+sin_na <- which(sapply(dat, function(x) sum(is.na(x)))==0)
+posiciones <- which(names(sin_na)==nombres)
+
+n <- c("UGDS","UGDS_WHITE","UGDS_BLACK","UGDS_HISP","UGDS_ASIAN", "UGDS_AIAN","UGDS_NHPI","UGDS_2MOR", "UGDS_NRA","UGDS_UNKN", "PPTUG_EF","CURROPER","TUITFTE","INEXPFTE","PCTPELL","PCTFLOAN","UG25abv",  "CDR3","DEP_STAT_PCT_IND",    "APPL_SCH_PCT_GE2",      "DEP_INC_AVG","IND_INC_AVG","DEP_INC_N","IND_INC_N","APPL_SCH_N")
+
+lista <- c()
+for (i in 1:25) {
+  numero <- which(n[i]==nombres)
+  lista[i] <- numero
+}
+
+dat <- dat[,-c(258:282)]
+
+dat[,-c(posiciones)] <- lapply(dat[,-c(posiciones)], as.factor)
+dat_sub <- dat[,-c(posiciones)]
+dat_sub <- dat_sub[,-c(11:48)]
+
+impute_results <- missForest(dat_sub, verbose = TRUE)
+
+
+resultado <- as.data.frame(impute_results$ximp)
+
+write.csv(resultado,"datos_randomforest.csv")
+
+datos_randomforest <- read_csv("datos_randomforest.csv")[-1]
+
+ceros <- sum(is.na(datos_randomforest))
+
+library(devtools)
+install_github("vqv/ggbiplot")
+

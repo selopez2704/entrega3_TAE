@@ -1,0 +1,9 @@
+"0","leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(lng=datos$LONGITUDE,lat=datos$LATITUDE)
+"
+"2","Warning in validateCoords(lng, lat, funcName) :"
+"2","
+ "
+"2"," Data contains 785 rows with either missing or invalid lat/lon values and will be ignored
+"

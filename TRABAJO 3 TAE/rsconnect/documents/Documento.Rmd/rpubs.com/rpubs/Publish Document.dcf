@@ -1,0 +1,11 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/912447/859e58b0512d4c1b8c41dc82fc0562de
+bundleId: https://api.rpubs.com/api/v1/document/912447/859e58b0512d4c1b8c41dc82fc0562de
+url: http://rpubs.com/scarvajal/912447
+when: 1654716453.05447
+lastSyncTime: 1654716453.05448

@@ -1,0 +1,64 @@
+"0","library(leaflet)"
+"0","library(kableExtra)"
+"0","library(dplyr)"
+"2","
+Attaching package: ‘dplyr’
+
+"
+"2","The following object is masked from ‘package:kableExtra’:
+
+    group_rows
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+"
+"0","library(devtools)"
+"2","Loading required package: usethis
+"
+"0","library(ggbiplot)"
+"2","Loading required package: ggplot2
+"
+"2","Loading required package: plyr
+"
+"2","--------------------------------------------------------------------------------------------------------------------
+"
+"2","You have loaded plyr after dplyr - this is likely to cause problems.
+If you need functions from both plyr and dplyr, please load plyr first, then dplyr:
+library(plyr); library(dplyr)
+"
+"2","--------------------------------------------------------------------------------------------------------------------
+"
+"2","
+Attaching package: ‘plyr’
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    arrange, count, desc, failwith, id, mutate, rename, summarise, summarize
+
+"
+"2","Loading required package: scales
+"
+"2","Loading required package: grid
+"
+"0","library(broom)"
+"0","library(tidyr)"
+"0","library(readr)"
+"2","
+Attaching package: ‘readr’
+
+"
+"2","The following object is masked from ‘package:scales’:
+
+    col_factor
+
+"
+"0","library(cluster)"

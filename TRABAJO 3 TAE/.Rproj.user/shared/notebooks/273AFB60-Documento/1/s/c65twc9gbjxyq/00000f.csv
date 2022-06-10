@@ -1,0 +1,8 @@
+"0","datos <- read.csv(""CollegeScorecard.csv"",na = c(""NULL"", ""PrivacySuppressed""))"
+"0",""
+"0",""
+"0","mapa <- leaflet() %>% "
+"0","  addTiles() %>% "
+"0","  addMarkers(lng=datos$LONGITUDE[1:1000],lat=datos$LATITUDE[1:1000])"
+"0",""
+"0","mapa"

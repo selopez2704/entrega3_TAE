@@ -1,0 +1,15 @@
+"0","library(ggfortify)"
+"2","
+Attaching package: ‘ggfortify’
+
+"
+"2","The following object is masked from ‘package:ggbiplot’:
+
+    ggbiplot
+
+"
+"0","datos_randomforest[] <- lapply(datos_randomforest[], as.numeric)"
+"0","set.seed(1234)"
+"0","autoplot(kmeans(datos_randomforest, 8), data = datos_randomforest, size = 3, alpha = 0.5) + "
+"0","    ggtitle(""K-Means por agrupaciones"") +"
+"0","    theme(legend.position=""none"")"

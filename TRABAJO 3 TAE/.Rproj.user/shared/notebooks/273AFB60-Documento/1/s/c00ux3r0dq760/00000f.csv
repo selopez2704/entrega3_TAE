@@ -1,0 +1,6 @@
+"0","ciudades <- table(datos$CITY)"
+"0","ciudades <- ciudades[which(ciudades>40)]"
+"0",""
+"0","kable(ciudades,col.names =NULL,caption = ""Tabla con las ciudades con más de 40 universidades"") %>% "
+"0","  kable_classic() %>% "
+"0","  kable_styling(full_width = F,position = ""center"")"
